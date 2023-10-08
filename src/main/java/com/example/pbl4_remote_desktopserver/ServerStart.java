@@ -1,12 +1,17 @@
 package com.example.pbl4_remote_desktopserver;
 
+import org.controlsfx.control.tableview2.filter.filtereditor.SouthFilter;
+
 import java.io.*;
 import java.net.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class ServerStart {
     public static List<ClientHandler> clients = new ArrayList<>();
+    private static Map<String, ClientHandler> clientMap = new HashMap<>();
 
     public static void main(String[] args) {
         try {
@@ -26,97 +31,79 @@ public class ServerStart {
             e.printStackTrace();
         }
     }
-}
 
-class ClientHandler implements Runnable {
-    private final Socket clientSocket;
-    private final String clientIP;
-    private BufferedReader in;
-    private PrintWriter out;
-
-    public ClientHandler(Socket socket) {
-        this.clientSocket = socket;
-        this.clientIP = socket.getInetAddress().getHostAddress();
-    }
-
-    @Override
-    public void run() {
-        try {
-            // Create DataInputStream and DataOutputStream for communication
-            DataInputStream authenticationInput = new DataInputStream(clientSocket.getInputStream());
-            DataOutputStream responseOutput = new DataOutputStream(clientSocket.getOutputStream());
-
-            // Receive combinedString (ip + "," + pwd) from the client
-            String combinedString = authenticationInput.readUTF();
-
-            String[] parts = combinedString.split(",");
-            if (parts.length != 3) {
-                responseOutput.writeUTF("Invalid input format");
-                responseOutput.flush();
-                clientSocket.close();
-                return;
-            }
-            String status = parts[0];
-            String ip = parts[1];
-            String pwd = parts[2];
-
-            System.out.println(ip + " " + pwd);
-
-            // Perform authentication logic here (e.g., check credentials)
-            boolean isAuthenticated = authenticateUser(ip, pwd);
-
-            // Send authentication result back to the client
-            if (isAuthenticated) {
-                responseOutput.writeUTF("Authenticated");
-                responseOutput.flush();
-            } else {
-                responseOutput.writeUTF("Authentication Failed");
-                responseOutput.flush();
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
+    public static void sendToClient(String sender, String receiver, String message) {
+        ClientHandler recipient = clientMap.get(receiver);
+        if (recipient != null) {
+            recipient.sendMessage(sender, message);
+        }
+        else {
+            System.out.println("Có đâu mà gửi");
         }
     }
 
-    public String getClientIP() {
-        return clientIP;
-    }
+    static class ClientHandler implements Runnable {
+        private final Socket clientSocket;
+        private String clientIP;
 
-    public Socket getClientSocket() {
-        return clientSocket;
-    }
+        private DataInputStream in;
+        private DataOutputStream out;
 
-    private boolean authenticateUser(String ip, String pwd) {
-        // Tìm kiếm và check var
-        // Tìm kiếm xem máy client đã kết nối với máy chủ chưa và gửi phản hồi
-        // Nếu đã kết nối, gửi pwd tới ip để nhận response
-        // Nếu chưa kết nối gửi về client đang request là máy chưa kết nối
-        for (ClientHandler clientHandler : ServerStart.clients) {
-            System.out.println(clientHandler.getClientIP());
-            if (clientHandler.getClientIP().equals(ip)) {
+
+        public ClientHandler(Socket socket) {
+            this.clientSocket = socket;
+            this.clientIP = socket.getInetAddress().getHostAddress();
+            try {
+                in = new DataInputStream(socket.getInputStream());
+                out = new DataOutputStream(socket.getOutputStream());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void run() {
+            try {
+                clientIP = in.readUTF(); // Đọc tên của client
+                System.out.println(clientIP);
+                clientMap.put(clientIP, this); // Thêm vào danh sách các client
+
+                String message;
+                while (true) {
+                    message = in.readUTF();
+                    if (!message.isEmpty()) {
+                        // Xử lý tin nhắn và gửi tới người nhận cụ thể
+                        MessageHandler msg = new MessageHandler(message);
+                        String response = msg.remoteResponse();
+                        String receiver = msg.receiver();
+                        sendToClient(clientIP, receiver, response);
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
                 try {
-                    // Create a DataOutputStream to send a message to the client
-                    DataOutputStream clientOutput = new DataOutputStream(clientHandler.getClientSocket().getOutputStream());
-
-                    String messageToSend = pwd;
-                    clientOutput.writeUTF(messageToSend);
-                    clientOutput.flush();
-
-                    // Create a DataInputStream to receive a response from the client
-                    DataInputStream clientInput = new DataInputStream(clientHandler.getClientSocket().getInputStream());
-
-                    // Read the response from the client
-                    String response = clientInput.readUTF();
-
-                    if (response.equals("True")) return true;
-                    else return false;
+                    clientSocket.close();
+                    clients.remove(this);
+                    clientMap.remove(clientIP);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
         }
-        return false;
+
+        public void sendMessage(String sender, String message) {
+            try {
+                out.writeUTF(sender + "," + message);
+                out.flush();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
+
+
+
+
 
