@@ -10,24 +10,26 @@ import java.util.List;
 import java.util.Map;
 
 public class ServerStart {
-    public static List<ClientHandler> clients = new ArrayList<>();
-    private static Map<String, ClientHandler> clientMap = new HashMap<>();
+    private static final int PORT_NUMBER = 6003;
+    private static final List<ClientHandler> clients = new ArrayList<>();
+    private static final Map<String, ClientHandler> clientMap = new HashMap<>();
 
     public static void main(String[] args) {
         try {
-            ServerSocket serverSocket = new ServerSocket(6003); // Chọn một cổng
-            System.out.println("Máy chủ đang chạy và chờ kết nối...");
+            ServerSocket serverSocket = new ServerSocket(PORT_NUMBER);
+            System.out.println("Server is running and waiting for connections..." + InetAddress.getLocalHost());
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                System.out.println("Khách hàng đã kết nối: " + clientSocket);
+                System.out.println("Client connected: " + clientSocket);
 
-                // Tạo một luồng mới để xử lý khách hàng
+                // Create a new thread to handle the client
                 ClientHandler clientHandler = new ClientHandler(clientSocket);
                 clients.add(clientHandler);
                 new Thread(clientHandler).start();
             }
         } catch (IOException e) {
+            System.err.println("Error while setting up the server: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -64,15 +66,15 @@ public class ServerStart {
         @Override
         public void run() {
             try {
-                clientIP = in.readUTF(); // Đọc tên của client
+                clientIP = in.readUTF(); // Read the client's name
                 System.out.println(clientIP);
-                clientMap.put(clientIP, this); // Thêm vào danh sách các client
+                clientMap.put(clientIP, this);
 
                 String message;
                 while (true) {
                     message = in.readUTF();
                     if (!message.isEmpty()) {
-                        // Xử lý tin nhắn và gửi tới người nhận cụ thể
+                        // Process the message and send it to the specific recipient
                         MessageHandler msg = new MessageHandler(message);
                         String response = msg.remoteResponse();
                         String receiver = msg.receiver();
@@ -80,24 +82,31 @@ public class ServerStart {
                     }
                 }
             } catch (IOException e) {
+                System.err.println("Error while processing client input: " + e.getMessage());
                 e.printStackTrace();
             } finally {
-                try {
-                    clientSocket.close();
-                    clients.remove(this);
-                    clientMap.remove(clientIP);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                closeSocket();
             }
         }
 
         public void sendMessage(String sender, String message) {
             try {
+                System.out.println(sender + " " + message);
                 out.writeUTF(sender + "," + message);
                 out.flush();
             } catch (IOException e) {
                 e.printStackTrace();
+            }
+        }
+
+        private void closeSocket() {
+            try {
+                clientSocket.close();
+                clients.remove(this);
+                clientMap.remove(clientIP);
+            } catch (IOException e) {
+                System.err.println("Error while closing the socket: " + e.getMessage());
+                throw new RuntimeException(e);
             }
         }
     }
